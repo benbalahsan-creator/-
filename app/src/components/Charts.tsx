@@ -100,6 +100,7 @@ export function HBar({ data, valueKey = 'count', name = 'עובדים', fmt }: {
           name={name}
           fill={pal.s1}
           radius={[4, 0, 0, 4]}
+          maxBarSize={28}
         >
           <LabelList
             dataKey={valueKey}
@@ -129,7 +130,7 @@ export function Distribution({ data }: { data: Bucket[] }) {
         <XAxis dataKey="name" reversed {...axisProps} interval={0} />
         <YAxis orientation="right" {...axisProps} width={32} allowDecimals={false} />
         <Tooltip content={<Tip />} cursor={{ fill: pal.grid, opacity: 0.5 }} />
-        <Bar dataKey="count" name="עובדים" fill={pal.s1} radius={[4, 4, 0, 0]} />
+        <Bar dataKey="count" name="עובדים" fill={pal.s1} radius={[4, 4, 0, 0]} maxBarSize={64} />
       </BarChart>
     </ResponsiveContainer>
   );
