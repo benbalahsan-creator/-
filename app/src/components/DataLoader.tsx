@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { ORG } from '../config/org';
 import { ExcelFileSource, listSheets } from '../data/sources/excelSource';
 import { SampleSource } from '../data/sources/sampleSource';
 import type { DataSource } from '../data/sources/DataSource';
@@ -47,6 +48,7 @@ export function DataLoader({ onLoaded }: Props) {
     <div className="loader">
       <div>
         <h1>דשבורד כוח אדם להנהלה</h1>
+        <p style={{ fontWeight: 600, color: 'var(--text)' }}>{ORG.fullName}</p>
         <p>טענו קובץ אקסל (‎.xlsx‎) או CSV שיוצא מ-Be360. הנתונים מעובדים בדפדפן בלבד ואינם נשלחים לשום שרת.</p>
       </div>
 

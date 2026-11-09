@@ -78,7 +78,7 @@ button, select, input { font: inherit; color: inherit; }
 
 .grid { display: grid; gap: 16px; }
 .kpis { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin-bottom: 16px; }
-.charts { grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); margin-bottom: 16px; }
+.charts { grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); margin-bottom: 16px; align-items: start; }
 
 .kpi .label { color: var(--text-2); font-size: 0.85rem; }
 .kpi .value { font-size: 1.9rem; font-weight: 600; line-height: 1.2; margin: 4px 0; }
@@ -134,3 +134,11 @@ table.data tr:hover td { background: var(--surface-2); }
 
 /* SVG של הגרפים בכיוון LTR כדי ש-text-anchor יעבוד נכון; הכיווניות מטופלת ב-reversed/orientation */
 .recharts-wrapper { direction: ltr; }
+
+.filters label.check { justify-content: end; padding-bottom: 8px; color: var(--text); }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.78rem; }
+.pill.warn { background: var(--warning-bg); color: var(--text); }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg button { border: none; background: var(--surface); padding: 4px 12px; cursor: pointer; color: var(--text-2); font-size: 0.85rem; }
+.seg button.on { background: var(--accent); color: var(--accent-ink); }

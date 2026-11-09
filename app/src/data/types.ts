@@ -6,13 +6,19 @@
 export interface Employee {
   id: string;
   fullName: string;
+  /** רשות / יישוב (בעמותה: היחידה הארגונית העיקרית — כל רשות היא התקשרות) */
   department: string;
   role: string;
+  /** מסגרת: שם הגן / בית הספר / הצהרון */
   site: string;
-  /** שכיר/ה, עצמאי/ת, מתנדב/ת, שירות לאומי וכו' */
+  /** סוג פעילות: צהרון גן, צהרון בי"ס, חוג, קייטנה, מטה */
+  program: string;
+  /** שעתי/ת, חודשי/ת, פרילנס וכו' */
   employmentType: string;
-  /** היקף משרה באחוזים (0-100). ברירת מחדל 100 אם חסר */
+  /** היקף משרה באחוזים (0-100). מחושב משעות שבועיות אם יש; ברירת מחדל 100 אם חסר */
   scopePercent: number;
+  /** שעות שבועיות (אם קיים בקובץ) */
+  weeklyHours: number | null;
   startDate: Date | null;
   endDate: Date | null;
   gender: string;

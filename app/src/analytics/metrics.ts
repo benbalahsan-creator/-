@@ -1,4 +1,5 @@
 import type { Employee } from '../data/types';
+import { ORG, hebrewSchoolYear, schoolYearStart } from '../config/org';
 
 const DAY = 86400000;
 const YEAR = 365.25 * DAY;
@@ -174,3 +175,99 @@ export const fmt1 = (n: number | null) => (n == null ? '—' : n.toLocaleString(
 export const fmtPct = (n: number | null) => (n == null ? '—' : `${(n * 100).toLocaleString('he-IL', { maximumFractionDigits: 1 })}%`);
 export const fmtMoney = (n: number | null) => (n == null ? '—' : `₪${Math.round(n).toLocaleString('he-IL')}`);
 export const fmtDate = (d: Date | null) => (d ? d.toLocaleDateString('he-IL') : '—');
+
+/* ---------- מדדים ייעודיים לארגון צהרונים (לפי שנת לימודים) ---------- */
+
+
+const NA = 'לא צוין';
+
+export interface SchoolYearRow {
+  label: string;
+  /** תאריך הספירה: 15 באוקטובר (אחרי שהשנה התייצבה), או היום אם השנה הנוכחית טרם הגיעה לשם */
+  countDate: Date;
+  headcount: number;
+  hires: number;
+  leavers: number;
+  /** מתוך הפעילים בסוף השנה הקודמת (15.6) — כמה פעילים בתאריך הספירה */
+  retention: number | null;
+  current: boolean;
+}
+
+/** השוואה בין שנות לימודים (ברירת מחדל: 4 שנים אחרונות) */
+export function schoolYearComparison(emps: Employee[], years = 4, ref = new Date()): SchoolYearRow[] {
+  const cur = schoolYearStart(ref);
+  const rows: SchoolYearRow[] = [];
+  for (let i = years - 1; i >= 0; i--) {
+    const start = new Date(cur.getFullYear() - i, cur.getMonth(), 1);
+    const end = new Date(start.getFullYear() + 1, start.getMonth(), 0, 23, 59);
+    const isCurrent = i === 0;
+    const oct15 = new Date(start.getFullYear(), start.getMonth() + 1, 15);
+    const countDate = isCurrent && ref < oct15 ? ref : oct15;
+    // אמצע יוני — עוד לפני סוף השנה, כך שמי שסיים ב-30.6 נכלל בבסיס
+    const prevYearEnd = new Date(start.getFullYear(), start.getMonth() - 3, 15); // 15.6
+    const base = emps.filter((e) => isActiveAt(e, prevYearEnd));
+    const stayed = base.filter((e) => isActiveAt(e, countDate)).length;
+    const until = isCurrent ? ref : end;
+    rows.push({
+      label: hebrewSchoolYear(start.getFullYear()),
+      countDate,
+      headcount: emps.filter((e) => isActiveAt(e, countDate)).length,
+      hires: emps.filter((e) => within(e.startDate, new Date(start.getTime() - 1), until)).length,
+      leavers: emps.filter((e) => within(e.endDate, new Date(start.getTime() - 1), until)).length,
+      retention: base.length ? stayed / base.length : null,
+      current: isCurrent,
+    });
+  }
+  return rows;
+}
+
+/** נשירה מוקדמת: מבין שנקלטו ב-12 החודשים האחרונים (ושעברו כבר N ימים) — כמה עזבו תוך N ימים */
+export function earlyAttrition(emps: Employee[], ref = new Date()) {
+  const days = ORG.earlyAttritionDays;
+  const yearAgo = monthsAgo(ref, 12);
+  const cutoff = new Date(ref.getTime() - days * DAY);
+  const cohort = emps.filter((e) => e.startDate && e.startDate > yearAgo && e.startDate <= cutoff);
+  const early = cohort.filter((e) => e.endDate && e.endDate.getTime() - e.startDate!.getTime() <= days * DAY).length;
+  return { cohort: cohort.length, early, rate: cohort.length ? early / cohort.length : null, days };
+}
+
+export interface FrameworkRow {
+  name: string;
+  authority: string;
+  program: string;
+  manager: string;
+  staff: number;
+  fte: number;
+  leavers12m: number;
+}
+
+/** מצבת לפי מסגרת (גן / בית ספר). מסגרות עם איש צוות אחד מסומנות כסיכון */
+export function frameworks(emps: Employee[], ref = new Date()): FrameworkRow[] {
+  const yearAgo = monthsAgo(ref, 12);
+  const m = new Map<string, Employee[]>();
+  for (const e of emps) {
+    if (e.site === NA || ORG.nonFrameworkPattern.test(e.program) || ORG.nonFrameworkPattern.test(e.site)) continue;
+    const k = `${e.department}|${e.site}`;
+    m.set(k, [...(m.get(k) ?? []), e]);
+  }
+  const out: FrameworkRow[] = [];
+  for (const [, list] of m) {
+    const active = list.filter((e) => isActiveAt(e, ref));
+    if (!active.length) continue;
+    const top = (key: keyof Employee) => {
+      const c = new Map<string, number>();
+      active.forEach((e) => c.set(String(e[key]), (c.get(String(e[key])) ?? 0) + 1));
+      return [...c.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    };
+    out.push({
+      name: list[0].site,
+      authority: list[0].department,
+      program: top('program'),
+      manager: top('manager'),
+      staff: active.length,
+      fte: active.reduce((s, e) => s + e.scopePercent / 100, 0),
+      leavers12m: list.filter((e) => within(e.endDate, yearAgo, ref)).length,
+    });
+  }
+  return out.sort((a, b) => a.staff - b.staff || b.leavers12m - a.leavers12m);
+}

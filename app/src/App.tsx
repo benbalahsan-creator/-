@@ -3,6 +3,7 @@ import { ColumnMapper } from './components/ColumnMapper';
 import { Dashboard } from './components/Dashboard';
 import { DataLoader } from './components/DataLoader';
 import { guessMapping } from './data/fields';
+import { ORG } from './config/org';
 import { normalize } from './data/normalize';
 import type { ColumnMapping, RawDataset } from './data/types';
 
@@ -56,7 +57,7 @@ export default function App() {
         <>
           <div className="topbar">
             <div>
-              <h1>דשבורד כוח אדם</h1>
+              <h1>כוח אדם · {ORG.name}</h1>
               <div className="meta">
                 מקור: {dataset.sourceName} · עודכן {dataset.loadedAt.toLocaleString('he-IL')}
               </div>

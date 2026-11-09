@@ -1,3 +1,4 @@
+import { ORG } from '../config/org';
 import type { ColumnMapping, Employee, RawRow } from './types';
 
 const EXCEL_EPOCH = Date.UTC(1899, 11, 30);
@@ -66,14 +67,18 @@ export function normalize(rows: RawRow[], mapping: ColumnMapping): NormalizeResu
     if (mapping.startDate && !startDate) badStart++;
     let scope = parseNumber(get(row, 'scopePercent'));
     if (scope != null && scope > 0 && scope <= 1.5) scope = scope * 100; // 0.5 → 50%
+    const weeklyHours = parseNumber(get(row, 'weeklyHours'));
+    if (scope == null && weeklyHours != null) scope = Math.min(100, (weeklyHours / ORG.fullTimeWeeklyHours) * 100);
     employees.push({
       id: str(get(row, 'id'), `row-${i + 2}`),
       fullName,
       department: str(get(row, 'department')),
       role: str(get(row, 'role')),
       site: str(get(row, 'site')),
+      program: str(get(row, 'program')),
       employmentType: str(get(row, 'employmentType')),
       scopePercent: scope ?? 100,
+      weeklyHours,
       startDate,
       endDate: parseDate(get(row, 'endDate')),
       gender: normalizeGender(get(row, 'gender')),
