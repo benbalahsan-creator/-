@@ -405,51 +405,63 @@ export function workdaysBetween(from: Date, to: Date): number {
   return n;
 }
 
-export interface HoursRow {
-  key: string;
-  name: string;
-  sub: string;
-  employees: number;
-  /** שעות מתוכננות מתחילת החודש ועד היום (לפי שעות שבועיות ותקופת העסקה) */
-  planned: number;
-  /** שעות בפועל (null אם אין בקובץ) */
-  actual: number | null;
+/** שכר שעתי: שעתיים — השכר עצמו; חודשיים — שכר חודשי ÷ (שעות שבועיות × 4.33) */
+export function hourlyRate(e: Employee): { rate: number; derived: boolean } | null {
+  if (e.wage == null || e.wage <= 0) return null;
+  if (isHourlyWage(e.wage)) return { rate: e.wage, derived: false };
+  const weekly = e.weeklyHours ?? (e.scopePercent / 100) * ORG.fullTimeWeeklyHours;
+  return weekly > 0 ? { rate: e.wage / (weekly * WEEKS_PER_MONTH), derived: true } : null;
+}
+export const WEEKS_PER_MONTH = 52 / 12;
+
+export interface PayRow {
+  employee: Employee;
+  hours: number | null;
+  rate: number | null;
+  rateDerived: boolean;
+  /** משכורת מתחילת החודש = שעות בפועל × שכר שעתי */
+  pay: number | null;
 }
 
-export type HoursGroup = 'department' | 'site' | 'employee';
-
-export function monthHours(emps: Employee[], group: HoursGroup, ref = new Date()) {
+/** שעות בפועל ומשכורת מצטברת מתחילת החודש, לכל עובד/ת שעבד/ה החודש (או פעיל/ה היום) */
+export function monthPay(emps: Employee[], ref = new Date()) {
   const mStart = new Date(ref.getFullYear(), ref.getMonth(), 1);
   const today = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate());
-  const daysSoFar = workdaysBetween(mStart, today);
-  const perDay = ORG.workDays.length;
-  const m = new Map<string, HoursRow>();
-  let anyActual = false;
+  const rows: PayRow[] = [];
   for (const e of emps) {
-    if (e.startDate && e.startDate > today) continue;
-    if (e.endDate && e.endDate < mStart) continue;
-    const from = e.startDate && e.startDate > mStart ? e.startDate : mStart;
-    const to = e.endDate && e.endDate < today ? new Date(e.endDate.getTime() - DAY) : today;
-    const days = to >= from ? workdaysBetween(from, to) : 0;
-    const weekly = e.weeklyHours ?? (e.scopePercent / 100) * ORG.fullTimeWeeklyHours;
-    const planned = (weekly / perDay) * days;
-    const [key, name, sub] =
-      group === 'employee' ? [e.id, e.fullName, `${e.site} · ${e.department}`]
-      : group === 'site' ? [`${e.department}|${e.site}`, e.site, e.department]
-      : [e.department, e.department, ''];
-    const r = m.get(key) ?? { key, name, sub, employees: 0, planned: 0, actual: null };
-    r.employees++;
-    r.planned += planned;
-    if (e.hoursThisMonth != null) {
-      anyActual = true;
-      r.actual = (r.actual ?? 0) + e.hoursThisMonth;
-    }
-    m.set(key, r);
+    const workedThisMonth = e.hoursThisMonth != null && e.hoursThisMonth > 0;
+    const activeInMonth = (!e.startDate || e.startDate <= today) && (!e.endDate || e.endDate >= mStart);
+    if (!workedThisMonth && !activeInMonth) continue;
+    const r = hourlyRate(e);
+    const hours = e.hoursThisMonth;
+    rows.push({ employee: e, hours, rate: r?.rate ?? null, rateDerived: r?.derived ?? false, pay: hours != null && r ? hours * r.rate : null });
   }
-  const rows = [...m.values()].sort((a, b) => b.planned - a.planned);
-  const total = rows.reduce(
-    (t, r) => ({ planned: t.planned + r.planned, actual: r.actual == null ? t.actual : (t.actual ?? 0) + r.actual, employees: t.employees + r.employees }),
-    { planned: 0, actual: null as number | null, employees: 0 },
-  );
-  return { rows, total, anyActual, from: mStart, to: today, daysSoFar, daysInMonth: workdaysBetween(mStart, new Date(ref.getFullYear(), ref.getMonth() + 1, 0)) };
+  const sum = (f: (r: PayRow) => number | null) => {
+    const v = rows.map(f).filter((x): x is number => x != null);
+    return v.length ? v.reduce((a, b) => a + b, 0) : null;
+  };
+  return {
+    rows,
+    from: mStart,
+    to: today,
+    totalHours: sum((r) => r.hours),
+    totalPay: sum((r) => r.pay),
+    worked: rows.filter((r) => (r.hours ?? 0) > 0).length,
+    daysSoFar: workdaysBetween(mStart, today),
+  };
+}
+
+/** תקנים (לפי מצבת המסגרות) מקובצים לפי רשות או סוג פעילות */
+export function requiredByGroup(fw: FrameworkRow[], key: 'authority' | 'program', maxGroups = 12): GroupRow[] {
+  const m = new Map<string, number>();
+  for (const f of fw) m.set(f[key], (m.get(f[key]) ?? 0) + f.required);
+  const total = [...m.values()].reduce((a, b) => a + b, 0) || 1;
+  let rows = [...m.entries()].map(([name, count]) => ({ name, count, fte: count, share: count / total })).sort((a, b) => b.count - a.count);
+  if (rows.length > maxGroups) {
+    const rest = rows.slice(maxGroups - 1);
+    rows = rows.slice(0, maxGroups - 1);
+    const c = rest.reduce((s, r) => s + r.count, 0);
+    rows.push({ name: 'אחר', count: c, fte: c, share: c / total });
+  }
+  return rows;
 }

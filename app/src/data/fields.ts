@@ -14,6 +14,8 @@ export const FIELDS: FieldDef[] = [
   { key: 'department', label: 'רשות / יישוב', required: true, aliases: ['רשות', 'יישוב', 'ישוב', 'עיר', 'רשות מקומית', 'אזור', 'מחלקה', 'אגף', 'city', 'authority', 'department'] },
   { key: 'site', label: 'מסגרת (גן / בית ספר)', required: false, aliases: ['מסגרת', 'שם מסגרת', 'שם הגן', 'גן', 'בית ספר', 'בית הספר', 'צהרון', 'שם צהרון', 'סניף', 'מיקום', 'site', 'location', 'branch'] },
   { key: 'program', label: 'סוג פעילות', required: false, aliases: ['סוג פעילות', 'סוג מסגרת', 'סוג שירות', 'שירות', 'תחום', 'פרויקט', 'תוכנית', 'program', 'service'] },
+  { key: 'phone', label: 'טלפון', required: false, aliases: ['טלפון נייד', 'מספר טלפון', 'טלפון', 'נייד', 'סלולרי', 'phone', 'mobile'] },
+  { key: 'residenceCity', label: 'עיר מגורים', required: false, aliases: ['עיר מגורים', 'ישוב מגורים', 'יישוב מגורים', 'מקום מגורים', 'כתובת עיר', 'residence', 'home city'] },
   { key: 'role', label: 'תפקיד', required: false, aliases: ['תפקיד', 'הגדרת תפקיד', 'משרה', 'role', 'title', 'job title', 'position'] },
   { key: 'manager', label: 'רכזת / מנהל/ת ישיר/ה', required: false, aliases: ['רכזת', 'רכז', 'רכזת אזור', 'מנהלת אזור', 'מנהל ישיר', 'מנהל', 'מנהלת', 'אחראי', 'manager'] },
   { key: 'employmentType', label: 'סוג העסקה', required: false, aliases: ['סוג העסקה', 'סוג עובד', 'מעמד', 'סטטוס העסקה', 'סוג שכר', 'employment type', 'type'] },

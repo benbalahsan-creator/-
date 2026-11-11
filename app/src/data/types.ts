@@ -36,6 +36,10 @@ export interface Employee {
   /** תקן המסגרת (מספר אנשי צוות נדרש) — אם מופיע בקובץ */
   requiredStaff: number | null;
   leaveReason: string;
+  /** טלפון נייד (מנורמל לפורמט 05X-XXXXXXX כשאפשר) */
+  phone: string;
+  /** עיר / יישוב מגורים (לא הרשות שבה עובדים) */
+  residenceCity: string;
 }
 
 /** שורה גולמית ממקור נתונים: כותרת עמודה → ערך */

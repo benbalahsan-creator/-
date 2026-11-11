@@ -148,3 +148,6 @@ table.data tr.total td { font-weight: 600; border-top: 1px solid var(--axis); }
 .lvl.down { background: var(--critical-bg); color: var(--critical); }
 .lvl.mid { background: var(--surface-2); color: var(--text-2); }
 .card-head .search { min-width: 0; width: min(260px, 100%); }
+.phone { font-variant-numeric: tabular-nums; unicode-bidi: isolate; white-space: nowrap; user-select: all; }
+table.data tfoot td { position: sticky; bottom: 0; background: var(--surface); }
+.seg button:disabled { opacity: 0.4; cursor: not-allowed; }

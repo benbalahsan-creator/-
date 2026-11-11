@@ -12,7 +12,8 @@ import {
   fmtTenure,
   fmtWage,
   frameworks,
-  monthHours,
+  monthPay,
+  requiredByGroup,
   tenureTable,
   tenureYears,
   wageMedianByRole,
@@ -27,7 +28,7 @@ import {
 import { ORG } from '../config/org';
 import type { ColumnMapping, Employee } from '../data/types';
 import { Distribution, HBar, HeadcountTrend, HiresLeavers } from './Charts';
-import { LeaversTable, MonthHoursTable, StaffingTable, TenureTable } from './Tables';
+import { LeaversTable, MonthHoursTable, Phone, StaffingTable, TenureTable } from './Tables';
 
 interface Props {
   employees: Employee[];
@@ -42,13 +43,10 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'employmentType', label: 'סוג העסקה' },
 ];
 
-const BREAKDOWNS: { key: keyof Employee; label: string }[] = [
+const BREAKDOWNS: { key: 'department' | 'program' | 'role'; label: string }[] = [
   { key: 'department', label: 'רשות' },
   { key: 'program', label: 'סוג פעילות' },
   { key: 'role', label: 'תפקיד' },
-  { key: 'manager', label: 'רכזת' },
-  { key: 'employmentType', label: 'סוג העסקה' },
-  { key: 'gender', label: 'מגדר' },
 ];
 
 const STD_KEY = 'hr-dashboard:staffing-defaults';
@@ -67,8 +65,8 @@ const isSeasonal = (e: Employee) => ORG.seasonalPattern.test(e.program) || ORG.s
 export function Dashboard({ employees, mapping }: Props) {
   const [filters, setFilters] = useState<Partial<Record<FilterKey, string>>>({});
   const [withSeasonal, setWithSeasonal] = useState(false);
-  const [breakdown, setBreakdown] = useState<keyof Employee>('department');
-  const [measure, setMeasure] = useState<'count' | 'fte'>('count');
+  const [breakdown, setBreakdown] = useState<'department' | 'program' | 'role'>('department');
+  const [measure, setMeasure] = useState<'staff' | 'required'>('staff');
   const [stdDefaults, setStdDefaults] = useState<StaffingDefaults>(loadDefaults);
   const updateDefaults = (d: StaffingDefaults) => {
     setStdDefaults(d);
@@ -97,9 +95,13 @@ export function Dashboard({ employees, mapping }: Props) {
   const years = useMemo(() => schoolYearComparison(data, 4), [data]);
   const early = useMemo(() => earlyAttrition(data), [data]);
   const fw = useMemo(() => frameworks(data, stdDefaults), [data, stdDefaults]);
-  const hours = useMemo(() => monthHours(data, 'department'), [data]);
+  const pay = useMemo(() => monthPay(data), [data]);
   const trend = useMemo(() => monthlyTrend(data, 24), [data]);
   const groups = useMemo(() => groupActive(data, breakdown, 12), [data, breakdown]);
+  const reqGroups = useMemo(
+    () => (breakdown === 'role' ? null : requiredByGroup(fw, breakdown === 'department' ? 'authority' : 'program')),
+    [fw, breakdown],
+  );
   const tenure = useMemo(() => tenureTable(data), [data]);
   const ages = useMemo(() => ageBuckets(data), [data]);
   const turnover = useMemo(() => turnoverByGroup(data, 'department'), [data]);
@@ -113,7 +115,6 @@ export function Dashboard({ employees, mapping }: Props) {
   const short = fw.filter((f) => f.status === 'short');
   const fullCount = fw.filter((f) => f.status !== 'short').length;
   const missing = short.reduce((s, f) => s - f.gap, 0);
-  const hoursPct = hours.anyActual && hours.total.planned > 0 ? (hours.total.actual ?? 0) / hours.total.planned : null;
 
   return (
     <>
@@ -149,8 +150,8 @@ export function Dashboard({ employees, mapping }: Props) {
           <Kpi label="מסגרות במצבה מלאה" value={`${fmtInt(fullCount)}/${fmtInt(fw.length)}`}
             hint={short.length ? <span className="delta-down">⚠ {fmtInt(short.length)} בחוסר · {fmtInt(missing)} תקנים פתוחים</span> : <span className="delta-up">✓ אין חוסרים היום</span>} />
         )}
-        {hoursPct != null && (
-          <Kpi label="שעות החודש: ביצוע" value={fmtPct(hoursPct)} hint={`${fmtInt(hours.total.actual ?? 0)} מתוך ${fmtInt(hours.total.planned)} שעות מתוכננות`} />
+        {has('hoursThisMonth') && pay.totalHours != null && (
+          <Kpi label="שעות בפועל החודש" value={fmt1(pay.totalHours)} hint={has('wage') && pay.totalPay != null ? `משכורת מצטברת: ₪${fmtInt(pay.totalPay)}` : `${fmtInt(pay.worked)} עובדים`} />
         )}
         <Kpi label={`שימור צוות לשנה"ל ${cur.label}`} value={fmtPct(cur.retention)} hint="מהפעילים ב-15.6 — פעילים כעת" />
         <Kpi label={`נקלטו בשנה"ל ${cur.label}`} value={fmtInt(cur.hires)} hint={`עזבו: ${fmtInt(cur.leavers)}`} />
@@ -162,8 +163,9 @@ export function Dashboard({ employees, mapping }: Props) {
       </div>
 
       <div className="stack">
+        <EmployeeTable employees={data} mapping={mapping} />
         {has('site') && <StaffingTable rows={fw} defaults={stdDefaults} onDefaultsChange={updateDefaults} />}
-        <MonthHoursTable employees={data} />
+        <MonthHoursTable employees={data} hasHours={has('hoursThisMonth')} hasWage={has('wage')} />
       </div>
 
       <div className="grid charts">
@@ -204,10 +206,10 @@ export function Dashboard({ employees, mapping }: Props) {
 
         <div className="card">
           <div className="card-head">
-            <h2>פילוח עובדים פעילים</h2>
+            <h2>פילוח עובדים ותקנים</h2>
             <div className="seg" role="group" aria-label="מדד">
-              <button className={measure === 'count' ? 'on' : ''} onClick={() => setMeasure('count')}>ראשים</button>
-              <button className={measure === 'fte' ? 'on' : ''} onClick={() => setMeasure('fte')}>משרות</button>
+              <button className={measure === 'staff' ? 'on' : ''} onClick={() => setMeasure('staff')}>עובדים</button>
+              <button className={measure === 'required' ? 'on' : ''} onClick={() => setMeasure('required')} disabled={!has('site')}>תקנים</button>
             </div>
           </div>
           <div className="tabs">
@@ -215,7 +217,18 @@ export function Dashboard({ employees, mapping }: Props) {
               <button key={b.key} className={breakdown === b.key ? 'on' : ''} onClick={() => setBreakdown(b.key)}>{b.label}</button>
             ))}
           </div>
-          <HBar data={groups} valueKey={measure} name={measure === 'fte' ? 'משרות' : 'עובדים'} />
+          {measure === 'staff' ? (
+            <HBar data={groups} valueKey="count" name="עובדים" />
+          ) : reqGroups ? (
+            <>
+              <div className="sub">תקני צוות במסגרות (לפי מצבת המסגרות){fw.some((f) => !f.requiredFromFile) ? ', כולל תקני ברירת מחדל' : ''}</div>
+              <HBar data={reqGroups} valueKey="count" name="תקנים" />
+            </>
+          ) : (
+            <div className="notice" style={{ marginTop: 8 }}>
+              אין תקן לפי תפקיד בנתונים — התקן מוגדר לכל מסגרת. בחרו "רשות" או "סוג פעילות", או הוסיפו לקובץ עמודת תקן לפי תפקיד.
+            </div>
+          )}
         </div>
 
         <div className="card">
@@ -258,7 +271,6 @@ export function Dashboard({ employees, mapping }: Props) {
 
       <div className="stack">
         <LeaversTable employees={data} />
-        <EmployeeTable employees={data} mapping={mapping} />
       </div>
     </>
   );
@@ -278,27 +290,31 @@ function RecentHires({ hires }: { hires: Employee[] }) {
   return (
     <div className="tbl-wrap" style={{ maxHeight: 300, overflowY: 'auto' }}>
       <table className="data">
-        <thead><tr><th>שם</th><th>רשות</th><th>מסגרת</th><th>תפקיד</th><th>תחילת עבודה</th></tr></thead>
+        <thead><tr><th>שם</th><th>טלפון</th><th>עיר מגורים</th><th>רשות</th><th>מסגרת</th><th>תפקיד</th><th>תחילת עבודה</th></tr></thead>
         <tbody>
           {hires.map((e) => (
             <tr key={e.id}>
               <td>{e.fullName}</td>
+              <td><Phone v={e.phone} /></td>
+              <td>{e.residenceCity || '—'}</td>
               <td>{e.department}</td>
               <td>{e.site}</td>
               <td>{e.role}</td>
               <td>{fmtDate(e.startDate)}</td>
             </tr>
           ))}
-          {!hires.length && <tr><td colSpan={5} className="empty">אין קליטות בתקופה</td></tr>}
+          {!hires.length && <tr><td colSpan={7} className="empty">אין קליטות בתקופה</td></tr>}
         </tbody>
       </table>
     </div>
   );
 }
 
-type SortKey = 'fullName' | 'department' | 'role' | 'site' | 'employmentType' | 'weeklyHours' | 'startDate' | 'tenure' | 'wage' | 'lastRaiseDate' | 'hoursThisMonth';
+type SortKey = 'phone' | 'residenceCity' | 'fullName' | 'department' | 'role' | 'site' | 'employmentType' | 'weeklyHours' | 'startDate' | 'tenure' | 'wage' | 'lastRaiseDate' | 'hoursThisMonth';
 const COLS: { key: SortKey; label: string; field?: keyof Employee }[] = [
   { key: 'fullName', label: 'שם' },
+  { key: 'phone', label: 'טלפון', field: 'phone' },
+  { key: 'residenceCity', label: 'עיר מגורים', field: 'residenceCity' },
   { key: 'department', label: 'רשות' },
   { key: 'site', label: 'מסגרת' },
   { key: 'role', label: 'תפקיד' },
@@ -334,7 +350,7 @@ function EmployeeTable({ employees, mapping }: { employees: Employee[]; mapping:
     const list = employees.filter(
       (e) =>
         (!onlyActive || isActiveAt(e, now)) &&
-        (!s || [e.fullName, e.department, e.role, e.site, e.manager, e.id].some((v) => v.includes(s))),
+        (!s || [e.fullName, e.department, e.role, e.site, e.manager, e.id, e.phone, e.residenceCity].some((v) => v.includes(s))),
     );
     return list.sort((a, b) => {
       const va = sortVal(a, sort.key), vb = sortVal(b, sort.key);
@@ -361,7 +377,7 @@ function EmployeeTable({ employees, mapping }: { employees: Employee[]; mapping:
           <label style={{ fontSize: '0.85rem' }}>
             <input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} /> פעילים בלבד
           </label>
-          <input className="search" placeholder="חיפוש שם / רשות / מסגרת…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input className="search" placeholder="חיפוש שם / טלפון / עיר / מסגרת…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
       </div>
       {mapping.wage && <div className="sub">רמת שכר: ביחס לחציון השכר של אותו תפקיד (±7%). העבירו את העכבר לפרטים.</div>}
@@ -381,6 +397,8 @@ function EmployeeTable({ employees, mapping }: { employees: Employee[]; mapping:
             {rows.slice(0, 500).map((e) => (
               <tr key={e.id}>
                 <td>{e.fullName}</td>
+                {mapping.phone && <td><Phone v={e.phone} /></td>}
+                {mapping.residenceCity && <td>{e.residenceCity || '—'}</td>}
                 <td>{e.department}</td>
                 <td>{e.site}</td>
                 <td>{e.role}</td>

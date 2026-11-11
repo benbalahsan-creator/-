@@ -46,6 +46,17 @@ function normalizeGender(v: unknown): string {
   return str(v);
 }
 
+/** טלפון ישראלי: משחזר 0 מוביל שאקסל מוחק ומעצב 05X-XXXXXXX */
+export function normalizePhone(v: unknown): string {
+  if (v == null || v === '') return '';
+  let d = String(v).replace(/[^\d+]/g, '');
+  if (d.startsWith('+972')) d = '0' + d.slice(4);
+  else if (d.startsWith('972')) d = '0' + d.slice(3);
+  if (/^5\d{8}$/.test(d)) d = '0' + d;
+  if (/^05\d{8}$/.test(d)) return `${d.slice(0, 3)}-${d.slice(3)}`;
+  return String(v).trim();
+}
+
 export interface NormalizeResult {
   employees: Employee[];
   warnings: string[];
@@ -91,6 +102,8 @@ export function normalize(rows: RawRow[], mapping: ColumnMapping): NormalizeResu
       hoursThisMonth: parseNumber(get(row, 'hoursThisMonth')),
       requiredStaff: parseNumber(get(row, 'requiredStaff')),
       leaveReason: str(get(row, 'leaveReason'), ''),
+      phone: normalizePhone(get(row, 'phone')),
+      residenceCity: str(get(row, 'residenceCity'), ''),
     });
   });
 

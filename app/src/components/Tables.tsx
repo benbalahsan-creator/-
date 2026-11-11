@@ -5,10 +5,11 @@ import {
   fmtInt,
   fmtPct,
   fmtTenure,
-  monthHours,
+  monthPay,
   tenureYears,
+  WEEKS_PER_MONTH,
   type FrameworkRow,
-  type HoursGroup,
+  type PayRow,
   type StaffingDefaults,
   type TenureRow,
 } from '../analytics/metrics';
@@ -219,7 +220,7 @@ export function LeaversTable({ employees }: { employees: Employee[] }) {
       <div className="tbl-wrap" style={{ maxHeight: 420, overflowY: 'auto' }}>
         <table className="data">
           <thead>
-            <tr><th>שם</th><th>רשות</th><th>מסגרת</th><th>תפקיד</th><th>תחילת עבודה</th><th>תאריך עזיבה</th><th>ותק בעזיבה</th>{hasReason && <th>סיבת עזיבה</th>}</tr>
+            <tr><th>שם</th><th>טלפון</th><th>עיר מגורים</th><th>רשות</th><th>מסגרת</th><th>תפקיד</th><th>תחילת עבודה</th><th>תאריך עזיבה</th><th>ותק בעזיבה</th>{hasReason && <th>סיבת עזיבה</th>}</tr>
           </thead>
           <tbody>
             {list.map((e) => {
@@ -228,6 +229,8 @@ export function LeaversTable({ employees }: { employees: Employee[] }) {
               return (
                 <tr key={e.id}>
                   <td>{e.fullName}</td>
+                  <td><Phone v={e.phone} /></td>
+                  <td>{e.residenceCity || '—'}</td>
                   <td>{e.department}</td>
                   <td>{e.site}</td>
                   <td>{e.role}</td>
@@ -238,7 +241,7 @@ export function LeaversTable({ employees }: { employees: Employee[] }) {
                 </tr>
               );
             })}
-            {!list.length && <tr><td colSpan={8} className="empty">אין עזיבות בתקופה</td></tr>}
+            {!list.length && <tr><td colSpan={10} className="empty">אין עזיבות בתקופה</td></tr>}
           </tbody>
         </table>
       </div>
@@ -246,98 +249,116 @@ export function LeaversTable({ employees }: { employees: Employee[] }) {
   );
 }
 
-/* ---------- שעות החודש הנוכחי ---------- */
+/* ---------- שעות ומשכורת מתחילת החודש, לפי עובד/ת ---------- */
 
 const HE_MONTH = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+const money = (n: number | null) => (n == null ? '—' : `₪${Math.round(n).toLocaleString('he-IL')}`);
+const rate = (n: number | null) => (n == null ? '—' : `₪${n.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 
-export function MonthHoursTable({ employees }: { employees: Employee[] }) {
-  const [group, setGroup] = useState<HoursGroup>('department');
-  const data = useMemo(() => monthHours(employees, group), [employees, group]);
-  const pct = (a: number | null, p: number) => (a == null || p <= 0 ? null : a / p);
+type PaySort = 'name' | 'hours' | 'rate' | 'pay';
+
+export function MonthHoursTable({ employees, hasHours, hasWage }: { employees: Employee[]; hasHours: boolean; hasWage: boolean }) {
+  const data = useMemo(() => monthPay(employees), [employees]);
+  const [q, setQ] = useState('');
+  const [sort, setSort] = useState<{ key: PaySort; dir: 1 | -1 }>({ key: 'name', dir: 1 });
   const rows = useMemo(() => {
-    const r = [...data.rows];
-    // כשיש נתוני בפועל: הפערים הגדולים קודם
-    if (data.anyActual) r.sort((a, b) => (pct(a.actual, a.planned) ?? 9) - (pct(b.actual, b.planned) ?? 9));
-    return r;
-  }, [data]);
-  const totalPct = pct(data.total.actual, data.total.planned);
+    const s = q.trim();
+    const v = (r: PayRow): number | string =>
+      sort.key === 'name' ? r.employee.fullName : (sort.key === 'hours' ? r.hours : sort.key === 'rate' ? r.rate : r.pay) ?? -1;
+    return data.rows
+      .filter((r) => !s || [r.employee.fullName, r.employee.site, r.employee.department].some((x) => x.includes(s)))
+      .sort((a, b) => {
+        const va = v(a), vb = v(b);
+        return (typeof va === 'number' ? va - (vb as number) : String(va).localeCompare(String(vb), 'he')) * sort.dir;
+      });
+  }, [data, q, sort]);
+  const th = (k: PaySort, label: string) => (
+    <th onClick={() => setSort({ key: k, dir: sort.key === k ? (-sort.dir as 1 | -1) : k === 'name' ? 1 : -1 })}>
+      {label} {sort.key === k ? (sort.dir === 1 ? '▲' : '▼') : ''}
+    </th>
+  );
   const d = (x: Date) => `${x.getDate()}.${x.getMonth() + 1}`;
 
   return (
     <div className="card">
       <div className="card-head">
         <div>
-          <h2>שעות {HE_MONTH[data.from.getMonth()]} עד היום</h2>
-          <div className="sub" style={{ marginBottom: 0 }}>
-            {d(data.from)}–{d(data.to)} · {data.daysSoFar} ימי עבודה מתוך {data.daysInMonth} בחודש · מתוכנן = שעות שבועיות ÷ {ORG.workDays.length} × ימי עבודה
-          </div>
+          <h2>שעות ומשכורת {HE_MONTH[data.from.getMonth()]} עד היום</h2>
+          <div className="sub" style={{ marginBottom: 0 }}>{d(data.from)}–{d(data.to)} · לפי עובד/ת</div>
         </div>
-        <div className="seg" role="group" aria-label="קיבוץ">
-          {([['department', 'לפי רשות'], ['site', 'לפי מסגרת'], ['employee', 'לפי עובד/ת']] as [HoursGroup, string][]).map(([k, l]) => (
-            <button key={k} className={group === k ? 'on' : ''} onClick={() => setGroup(k)}>{l}</button>
-          ))}
-        </div>
+        <input className="search" placeholder="חיפוש עובד/ת / מסגרת…" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
 
-      <div className="summary">
-        <div className="sum">
-          <strong>{fmtInt(data.total.planned)}</strong>
-          <span>שעות מתוכננות עד היום</span>
+      {!hasHours ? (
+        <div className="notice" style={{ marginTop: 12 }}>
+          כדי להציג שעות ומשכורת, יש למפות בהתאמת העמודות את "שעות בפועל החודש" (מדוח הנוכחות של Be360){hasWage ? '' : ' ואת "שכר"'}.
         </div>
-        {data.anyActual && (
-          <>
+      ) : (
+        <>
+          <div className="summary">
             <div className="sum">
-              <strong>{fmtInt(data.total.actual ?? 0)}</strong>
-              <span>שעות בפועל</span>
+              <strong>{data.totalHours == null ? '—' : fmt1(data.totalHours)}</strong>
+              <span>שעות בפועל מתחילת החודש</span>
             </div>
-            <div className={`sum ${totalPct != null && totalPct < 0.9 ? 'bad' : 'ok'}`}>
-              <strong>{fmtPct(totalPct)}</strong>
-              <span>ביצוע מול תכנון</span>
+            {hasWage && (
+              <div className="sum">
+                <strong>{money(data.totalPay)}</strong>
+                <span>משכורת מצטברת עד היום</span>
+              </div>
+            )}
+            <div className="sum">
+              <strong>{fmtInt(data.worked)}</strong>
+              <span>עובדים שעבדו החודש</span>
             </div>
-          </>
-        )}
-        <div className="sum">
-          <strong>{fmtInt(data.total.employees)}</strong>
-          <span>עובדים שעבדו החודש</span>
-        </div>
-      </div>
+          </div>
 
-      <div className="tbl-wrap" style={{ maxHeight: 440, overflowY: 'auto' }}>
-        <table className="data">
-          <thead>
-            <tr>
-              <th>{group === 'department' ? 'רשות' : group === 'site' ? 'מסגרת' : 'עובד/ת'}</th>
-              {group !== 'employee' && <th>עובדים</th>}
-              <th>מתוכנן עד היום</th>
-              {data.anyActual && <><th>בפועל</th><th>פער</th><th>ביצוע</th></>}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => {
-              const p = pct(r.actual, r.planned);
-              return (
-                <tr key={r.key}>
-                  <td>{r.name}{r.sub && <span className="cell-sub"> · {r.sub}</span>}</td>
-                  {group !== 'employee' && <td>{fmtInt(r.employees)}</td>}
-                  <td>{fmt1(r.planned)}</td>
-                  {data.anyActual && (
-                    <>
-                      <td>{r.actual == null ? '—' : fmt1(r.actual)}</td>
-                      <td>{r.actual == null ? '—' : fmt1(r.actual - r.planned)}</td>
-                      <td>{p == null ? '—' : p < 0.85 ? <span className="pill bad">{fmtPct(p)}</span> : p > 1.1 ? <span className="pill info">{fmtPct(p)}</span> : <span className="pill ok">{fmtPct(p)}</span>}</td>
-                    </>
-                  )}
+          <div className="tbl-wrap" style={{ maxHeight: 460, overflowY: 'auto' }}>
+            <table className="data">
+              <thead>
+                <tr>
+                  {th('name', 'שם')}
+                  {th('hours', 'שעות עד היום (בפועל)')}
+                  {hasWage && th('rate', 'שכר שעתי')}
+                  {hasWage && th('pay', 'משכורת עד היום')}
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      <div className="foot">
-        {data.anyActual
-          ? 'ביצוע מתחת ל-85% מסומן באדום (היעדרויות / חוסר בשעות), מעל 110% בכחול (שעות נוספות).'
-          : 'כדי להשוות לשעות בפועל, יש למפות עמודה "שעות בפועל החודש" מדוח הנוכחות של Be360.'}
-      </div>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.employee.id}>
+                    <td>{r.employee.fullName}</td>
+                    <td>{r.hours == null ? '—' : fmt1(r.hours)}</td>
+                    {hasWage && <td>{rate(r.rate)}{r.rateDerived && <span className="cell-sub" title="מחושב משכר חודשי"> *</span>}</td>}
+                    {hasWage && <td>{money(r.pay)}</td>}
+                  </tr>
+                ))}
+                {!rows.length && <tr><td colSpan={4} className="empty">אין עובדים בסינון הזה</td></tr>}
+              </tbody>
+              {rows.length > 0 && (
+                <tfoot>
+                  <tr className="total">
+                    <td>סה״כ ({fmtInt(rows.length)})</td>
+                    <td>{fmt1(rows.reduce((t, r) => t + (r.hours ?? 0), 0))}</td>
+                    {hasWage && <td />}
+                    {hasWage && <td>{money(rows.reduce((t, r) => t + (r.pay ?? 0), 0))}</td>}
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+          {hasWage && (
+            <div className="foot">
+              משכורת עד היום = שעות בפועל × שכר שעתי (ברוטו, לפני תוספות וניכויים).
+              {rows.some((r) => r.rateDerived) && <> * לעובדים בשכר חודשי: שכר שעתי מחושב = שכר חודשי ÷ (שעות שבועיות × {WEEKS_PER_MONTH.toFixed(2)}).</>}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
+}
+
+/** מספר טלפון: מוצג כטקסט לבחירה והעתקה (קישורי tel: לא תמיד עובדים בכל סביבה) */
+export function Phone({ v }: { v: string }) {
+  if (!v) return <span className="cell-sub">—</span>;
+  return <span className="phone" dir="ltr">{v}</span>;
 }
