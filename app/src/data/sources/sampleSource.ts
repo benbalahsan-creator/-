@@ -50,6 +50,19 @@ interface Slot {
 function rng(seed: number) {
   return () => ((seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296);
 }
+const REASONS_MID = ['מעבר לעבודה אחרת', 'לימודים', 'מעבר דירה', 'שכר', 'עומס / שעות לא מתאימות', 'סיבות אישיות', 'סיום העסקה ביוזמת העמותה'];
+const REASONS_EARLY = ['לא התאים/ה לתפקיד', 'מעבר לעבודה אחרת', 'שעות לא מתאימות', 'לימודים'];
+
+function workdays(from: Date, to: Date) {
+  let n = 0;
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  while (d <= to) {
+    if (ORG.workDays.includes(d.getDay())) n++;
+    d.setDate(d.getDate() + 1);
+  }
+  return n;
+}
+
 const fmt = (d: Date) => `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
 const addDays = (d: Date, n: number) => new Date(d.getTime() + n * 86400000);
 
@@ -94,11 +107,47 @@ export class SampleSource implements DataSource {
 
     const rows: RawRow[] = [];
     let id = 1000;
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const pushEmp = (s: Slot, start: Date, end: Date | null) => {
       const p = person(s.role.startsWith('מדריך/ת ג') ? r() < 0.4 : undefined);
       const age = s.student ? 18 + Math.pow(r(), 1.6) * 12 : 30 + r() * 32;
-      const hourly = 48 + r() * 14;
-      const cost = s.employment === 'חודשי/ת' ? (s.hours === 42 ? 11000 + r() * 9000 : 7500 + r() * 3000) : hourly * s.hours * 4.33;
+      const left = end && end <= now ? end : null;
+      const tenureY = ((left ?? now).getTime() - start.getTime()) / (365.25 * 86400000);
+      // שכר: שעתי לצוות שטח (עולה מעט עם ותק ותפקיד), חודשי לרכזות ומטה
+      const roleBonus = /גננת|רכזת/.test(s.role) ? 6 : /ג׳ודו|אנגלית/.test(s.role) ? 12 : 0;
+      const hourly = Math.round((38 + roleBonus + Math.min(tenureY, 6) * 1.6 + r() * 5) * 2) / 2;
+      const monthly = s.hours === 42 ? Math.round((11000 + r() * 9000) / 100) * 100 : Math.round((7500 + r() * 3000) / 100) * 100;
+      const wage = s.employment === 'חודשי/ת' ? monthly : hourly;
+      const cost = s.employment === 'חודשי/ת' ? monthly : hourly * s.hours * 4.33;
+      // העלאה אחרונה: לעובדים עם ותק של מעל שנה, ב-1.9 או ב-1.1 של אחת השנתיים האחרונות
+      let raiseDate: Date | null = null;
+      let raise: number | null = null;
+      if (tenureY > 1 && r() < 0.8) {
+        const end = left ?? now;
+        const cands = [0, 1, 2].flatMap((k) => [new Date(end.getFullYear() - k, 8, 1), new Date(end.getFullYear() - k, 0, 1)])
+          .filter((d) => d <= end && d.getTime() - start.getTime() > 300 * 86400000);
+        if (cands.length) {
+          raiseDate = cands.sort((a, b) => b.getTime() - a.getTime())[0];
+          raise = s.employment === 'חודשי/ת' ? Math.round((250 + r() * 750) / 50) * 50 : Math.round((2 + r() * 6) * 10) / 10;
+        }
+      }
+      // שעות בפועל מתחילת החודש (לפעילים החודש)
+      let hours: number | '' = '';
+      if (start <= today && (!left || left >= monthStart)) {
+        const from = start > monthStart ? start : monthStart;
+        const to = left && left < today ? left : today;
+        const planned = (s.hours / ORG.workDays.length) * workdays(from, to);
+        const factor = r() < 0.08 ? 0.45 + r() * 0.3 : 0.85 + r() * 0.22; // היעדרויות / שעות נוספות
+        hours = Math.round(planned * factor * 2) / 2;
+      }
+      let reason = '';
+      if (left) {
+        const days = (left.getTime() - start.getTime()) / 86400000;
+        reason = days <= ORG.earlyAttritionDays ? pick(REASONS_EARLY)
+          : left.getMonth() === 5 && left.getDate() === 30 ? (r() < 0.6 ? 'סיום שנת לימודים' : pick(REASONS_MID))
+          : /קייטנ/.test(s.program) ? 'סיום קייטנה' : pick(REASONS_MID);
+      }
       rows.push({
         'מספר עובד': String(id++),
         'שם מלא': p.name,
@@ -110,9 +159,14 @@ export class SampleSource implements DataSource {
         'סוג העסקה': s.employment,
         'שעות שבועיות': s.hours,
         'תאריך תחילת עבודה': fmt(start),
-        'תאריך סיום עבודה': end && end <= now ? fmt(end) : '',
+        'תאריך סיום עבודה': left ? fmt(left) : '',
+        'סיבת עזיבה': reason,
         'מגדר': p.female ? 'נ' : 'ז',
         'תאריך לידה': fmt(new Date(start.getTime() - age * 365.25 * 86400000)),
+        'שכר': wage,
+        'תאריך העלאה אחרונה': raiseDate ? fmt(raiseDate) : '',
+        'העלאה אחרונה': raise ?? '',
+        'שעות בפועל החודש': hours,
         'עלות חודשית': Math.round(cost * 1.25),
       });
     };
@@ -136,8 +190,9 @@ export class SampleSource implements DataSource {
         }
         pushEmp(s, start, end);
         if (!end || end > now) break;
-        // מחליף/ה: אחרי עזיבה בסוף שנה — סוף אוגוסט; אחרת אחרי 1–3 שבועות
-        start = end.getMonth() === 5 && end.getDate() === 30 ? addDays(new Date(end.getFullYear(), 7, 22), Math.floor(r() * 10)) : addDays(end, 5 + Math.floor(r() * 16));
+        // מחליף/ה: אחרי עזיבה בסוף שנה — סוף אוגוסט; אחרת אחרי 1–3 שבועות, ולפעמים התקן נשאר פתוח 1–2 חודשים
+        const delay = r() < 0.18 ? 25 + Math.floor(r() * 45) : 5 + Math.floor(r() * 16);
+        start = end.getMonth() === 5 && end.getDate() === 30 ? addDays(new Date(end.getFullYear(), 7, 22), Math.floor(r() * (r() < 0.12 ? 60 : 10))) : addDays(end, delay);
       }
     }
 

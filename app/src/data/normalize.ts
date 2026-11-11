@@ -85,6 +85,12 @@ export function normalize(rows: RawRow[], mapping: ColumnMapping): NormalizeResu
       birthDate: parseDate(get(row, 'birthDate')),
       manager: str(get(row, 'manager')),
       monthlyCost: parseNumber(get(row, 'monthlyCost')),
+      wage: parseNumber(get(row, 'wage')),
+      lastRaiseDate: parseDate(get(row, 'lastRaiseDate')),
+      lastRaise: parseNumber(get(row, 'lastRaise')),
+      hoursThisMonth: parseNumber(get(row, 'hoursThisMonth')),
+      requiredStaff: parseNumber(get(row, 'requiredStaff')),
+      leaveReason: str(get(row, 'leaveReason'), ''),
     });
   });
 

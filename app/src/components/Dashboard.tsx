@@ -8,18 +8,26 @@ import {
   fmtInt,
   fmtMoney,
   fmtPct,
+  fmtRaise,
+  fmtTenure,
+  fmtWage,
   frameworks,
+  monthHours,
+  tenureTable,
+  tenureYears,
+  wageMedianByRole,
+  type StaffingDefaults,
   groupActive,
   isActiveAt,
   monthlyTrend,
   recentMovements,
   schoolYearComparison,
-  tenureBuckets,
   turnoverByGroup,
 } from '../analytics/metrics';
 import { ORG } from '../config/org';
 import type { ColumnMapping, Employee } from '../data/types';
 import { Distribution, HBar, HeadcountTrend, HiresLeavers } from './Charts';
+import { LeaversTable, MonthHoursTable, StaffingTable, TenureTable } from './Tables';
 
 interface Props {
   employees: Employee[];
@@ -43,6 +51,17 @@ const BREAKDOWNS: { key: keyof Employee; label: string }[] = [
   { key: 'gender', label: 'מגדר' },
 ];
 
+const STD_KEY = 'hr-dashboard:staffing-defaults';
+function loadDefaults(): StaffingDefaults {
+  try {
+    const v = JSON.parse(localStorage.getItem(STD_KEY) ?? 'null');
+    if (Array.isArray(v) && v.length === ORG.defaultStaffing.length) return v;
+  } catch {
+    /* ignore */
+  }
+  return ORG.defaultStaffing;
+}
+
 const isSeasonal = (e: Employee) => ORG.seasonalPattern.test(e.program) || ORG.seasonalPattern.test(e.role);
 
 export function Dashboard({ employees, mapping }: Props) {
@@ -50,6 +69,15 @@ export function Dashboard({ employees, mapping }: Props) {
   const [withSeasonal, setWithSeasonal] = useState(false);
   const [breakdown, setBreakdown] = useState<keyof Employee>('department');
   const [measure, setMeasure] = useState<'count' | 'fte'>('count');
+  const [stdDefaults, setStdDefaults] = useState<StaffingDefaults>(loadDefaults);
+  const updateDefaults = (d: StaffingDefaults) => {
+    setStdDefaults(d);
+    try {
+      localStorage.setItem(STD_KEY, JSON.stringify(d));
+    } catch {
+      /* ignore */
+    }
+  };
 
   const hasSeasonal = useMemo(() => employees.some(isSeasonal), [employees]);
   const base = useMemo(() => (withSeasonal ? employees : employees.filter((e) => !isSeasonal(e))), [employees, withSeasonal]);
@@ -68,10 +96,11 @@ export function Dashboard({ employees, mapping }: Props) {
   const kpis = useMemo(() => computeKpis(data), [data]);
   const years = useMemo(() => schoolYearComparison(data, 4), [data]);
   const early = useMemo(() => earlyAttrition(data), [data]);
-  const fw = useMemo(() => frameworks(data), [data]);
+  const fw = useMemo(() => frameworks(data, stdDefaults), [data, stdDefaults]);
+  const hours = useMemo(() => monthHours(data, 'department'), [data]);
   const trend = useMemo(() => monthlyTrend(data, 24), [data]);
   const groups = useMemo(() => groupActive(data, breakdown, 12), [data, breakdown]);
-  const tenure = useMemo(() => tenureBuckets(data), [data]);
+  const tenure = useMemo(() => tenureTable(data), [data]);
   const ages = useMemo(() => ageBuckets(data), [data]);
   const turnover = useMemo(() => turnoverByGroup(data, 'department'), [data]);
   const moves = useMemo(() => recentMovements(data, 90), [data]);
@@ -81,8 +110,10 @@ export function Dashboard({ employees, mapping }: Props) {
   const visibleBreakdowns = BREAKDOWNS.filter((b) => has(b.key));
   const delta = kpis.active - kpis.headcountYearAgo;
   const cur = years[years.length - 1];
-  const thin = fw.filter((f) => f.staff <= 1);
-  const atRisk = fw.filter((f) => f.staff <= 1 || f.leavers12m >= 3).slice(0, 15);
+  const short = fw.filter((f) => f.status === 'short');
+  const fullCount = fw.filter((f) => f.status !== 'short').length;
+  const missing = short.reduce((s, f) => s - f.gap, 0);
+  const hoursPct = hours.anyActual && hours.total.planned > 0 ? (hours.total.actual ?? 0) / hours.total.planned : null;
 
   return (
     <>
@@ -114,7 +145,13 @@ export function Dashboard({ employees, mapping }: Props) {
         <Kpi label="עובדים פעילים" value={fmtInt(kpis.active)}
           hint={<span className={delta >= 0 ? 'delta-up' : 'delta-down'}>{delta >= 0 ? '▲' : '▼'} {fmtInt(Math.abs(delta))} לעומת לפני שנה</span>} />
         <Kpi label="משרות מלאות (FTE)" value={fmt1(kpis.fte)} hint={has('weeklyHours') && !has('scopePercent') ? `לפי ${ORG.fullTimeWeeklyHours} ש"ש למשרה` : 'סכום היקפי המשרה'} />
-        {has('site') && <Kpi label="מסגרות פעילות" value={fmtInt(fw.length)} hint={thin.length ? <span className="delta-down">{fmtInt(thin.length)} עם איש צוות אחד בלבד</span> : 'לכל המסגרות 2+ אנשי צוות'} />}
+        {has('site') && (
+          <Kpi label="מסגרות במצבה מלאה" value={`${fmtInt(fullCount)}/${fmtInt(fw.length)}`}
+            hint={short.length ? <span className="delta-down">⚠ {fmtInt(short.length)} בחוסר · {fmtInt(missing)} תקנים פתוחים</span> : <span className="delta-up">✓ אין חוסרים היום</span>} />
+        )}
+        {hoursPct != null && (
+          <Kpi label="שעות החודש: ביצוע" value={fmtPct(hoursPct)} hint={`${fmtInt(hours.total.actual ?? 0)} מתוך ${fmtInt(hours.total.planned)} שעות מתוכננות`} />
+        )}
         <Kpi label={`שימור צוות לשנה"ל ${cur.label}`} value={fmtPct(cur.retention)} hint="מהפעילים ב-15.6 — פעילים כעת" />
         <Kpi label={`נקלטו בשנה"ל ${cur.label}`} value={fmtInt(cur.hires)} hint={`עזבו: ${fmtInt(cur.leavers)}`} />
         <Kpi label="תחלופה שנתית" value={fmtPct(kpis.turnover12m)} hint="עוזבים ב-12 ח׳ ÷ ממוצע מצבת" />
@@ -122,6 +159,11 @@ export function Dashboard({ employees, mapping }: Props) {
         <Kpi label="ותק ממוצע" value={kpis.avgTenureYears == null ? '—' : `${fmt1(kpis.avgTenureYears)} שנים`} />
         {has('birthDate') && <Kpi label="גיל ממוצע" value={kpis.avgAge == null ? '—' : fmt1(kpis.avgAge)} />}
         {has('monthlyCost') && <Kpi label="עלות שכר חודשית" value={fmtMoney(kpis.monthlyCost)} hint="עובדים פעילים" />}
+      </div>
+
+      <div className="stack">
+        {has('site') && <StaffingTable rows={fw} defaults={stdDefaults} onDefaultsChange={updateDefaults} />}
+        <MonthHoursTable employees={data} />
       </div>
 
       <div className="grid charts">
@@ -198,37 +240,7 @@ export function Dashboard({ employees, mapping }: Props) {
           </div>
         </div>
 
-        {has('site') && (
-          <div className="card">
-            <h2>מסגרות שדורשות תשומת לב</h2>
-            <div className="sub">איש צוות אחד בלבד, או 3+ עזיבות ב-12 חודשים</div>
-            <div className="tbl-wrap" style={{ maxHeight: 420, overflowY: 'auto' }}>
-              <table className="data">
-                <thead>
-                  <tr><th>מסגרת</th><th>רשות</th><th>רכזת</th><th>צוות</th><th>עזבו (12 ח׳)</th></tr>
-                </thead>
-                <tbody>
-                  {atRisk.map((f) => (
-                    <tr key={`${f.authority}|${f.name}`}>
-                      <td>{f.name}</td>
-                      <td>{f.authority}</td>
-                      <td>{f.manager}</td>
-                      <td>{f.staff <= 1 ? <span className="pill warn">⚠ {fmtInt(f.staff)}</span> : fmtInt(f.staff)}</td>
-                      <td>{f.leavers12m >= 3 ? <span className="pill warn">⚠ {fmtInt(f.leavers12m)}</span> : fmtInt(f.leavers12m)}</td>
-                    </tr>
-                  ))}
-                  {!atRisk.length && <tr><td colSpan={5} style={{ color: 'var(--muted)' }}>אין מסגרות חריגות</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        <div className="card">
-          <h2>התפלגות ותק</h2>
-          <div className="sub">עובדים פעילים</div>
-          <Distribution data={tenure} />
-        </div>
+        <TenureTable rows={tenure} hasWage={has('wage')} />
         {has('birthDate') && (
           <div className="card">
             <h2>התפלגות גילאים</h2>
@@ -238,13 +250,16 @@ export function Dashboard({ employees, mapping }: Props) {
         )}
 
         <div className="card">
-          <h2>תנועות אחרונות</h2>
+          <h2>קליטות אחרונות ({fmtInt(moves.hires.length)})</h2>
           <div className="sub">90 הימים האחרונים</div>
-          <Movements hires={moves.hires} leavers={moves.leavers} />
+          <RecentHires hires={moves.hires} />
         </div>
       </div>
 
-      <EmployeeTable employees={data} />
+      <div className="stack">
+        <LeaversTable employees={data} />
+        <EmployeeTable employees={data} mapping={mapping} />
+      </div>
     </>
   );
 }
@@ -259,51 +274,60 @@ function Kpi({ label, value, hint }: { label: string; value: string; hint?: Reac
   );
 }
 
-function Movements({ hires, leavers }: { hires: Employee[]; leavers: Employee[] }) {
-  const [tab, setTab] = useState<'h' | 'l'>('h');
-  const list = tab === 'h' ? hires : leavers;
+function RecentHires({ hires }: { hires: Employee[] }) {
   return (
-    <>
-      <div className="tabs">
-        <button className={tab === 'h' ? 'on' : ''} onClick={() => setTab('h')}>נקלטו ({hires.length})</button>
-        <button className={tab === 'l' ? 'on' : ''} onClick={() => setTab('l')}>עזבו ({leavers.length})</button>
-      </div>
-      <div className="tbl-wrap" style={{ maxHeight: 260, overflowY: 'auto' }}>
-        <table className="data">
-          <thead><tr><th>שם</th><th>רשות</th><th>תפקיד</th><th>תאריך</th></tr></thead>
-          <tbody>
-            {list.map((e) => (
-              <tr key={e.id}>
-                <td>{e.fullName}</td>
-                <td>{e.department}</td>
-                <td>{e.role}</td>
-                <td>{fmtDate(tab === 'h' ? e.startDate : e.endDate)}</td>
-              </tr>
-            ))}
-            {!list.length && <tr><td colSpan={4} style={{ color: 'var(--muted)' }}>אין תנועות בתקופה</td></tr>}
-          </tbody>
-        </table>
-      </div>
-    </>
+    <div className="tbl-wrap" style={{ maxHeight: 300, overflowY: 'auto' }}>
+      <table className="data">
+        <thead><tr><th>שם</th><th>רשות</th><th>מסגרת</th><th>תפקיד</th><th>תחילת עבודה</th></tr></thead>
+        <tbody>
+          {hires.map((e) => (
+            <tr key={e.id}>
+              <td>{e.fullName}</td>
+              <td>{e.department}</td>
+              <td>{e.site}</td>
+              <td>{e.role}</td>
+              <td>{fmtDate(e.startDate)}</td>
+            </tr>
+          ))}
+          {!hires.length && <tr><td colSpan={5} className="empty">אין קליטות בתקופה</td></tr>}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
-type SortKey = 'fullName' | 'department' | 'role' | 'site' | 'employmentType' | 'scopePercent' | 'startDate';
-const COLS: { key: SortKey; label: string }[] = [
+type SortKey = 'fullName' | 'department' | 'role' | 'site' | 'employmentType' | 'weeklyHours' | 'startDate' | 'tenure' | 'wage' | 'lastRaiseDate' | 'hoursThisMonth';
+const COLS: { key: SortKey; label: string; field?: keyof Employee }[] = [
   { key: 'fullName', label: 'שם' },
   { key: 'department', label: 'רשות' },
   { key: 'site', label: 'מסגרת' },
   { key: 'role', label: 'תפקיד' },
   { key: 'employmentType', label: 'סוג העסקה' },
-  { key: 'scopePercent', label: 'היקף' },
+  { key: 'weeklyHours', label: 'היקף' },
   { key: 'startDate', label: 'תחילת עבודה' },
+  { key: 'tenure', label: 'ותק', field: 'startDate' },
+  { key: 'wage', label: 'רמת שכר', field: 'wage' },
+  { key: 'lastRaiseDate', label: 'העלאה אחרונה', field: 'lastRaiseDate' },
+  { key: 'hoursThisMonth', label: 'שעות החודש', field: 'hoursThisMonth' },
 ];
 
-function EmployeeTable({ employees }: { employees: Employee[] }) {
+function EmployeeTable({ employees, mapping }: { employees: Employee[]; mapping: ColumnMapping }) {
   const [q, setQ] = useState('');
   const [onlyActive, setOnlyActive] = useState(true);
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'fullName', dir: 1 });
   const now = useMemo(() => new Date(), []);
+  const medians = useMemo(() => wageMedianByRole(employees, now), [employees, now]);
+  const cols = COLS.filter((c) => !c.field || mapping[c.field]);
+
+  const sortVal = (e: Employee, k: SortKey): number | string => {
+    switch (k) {
+      case 'tenure': return tenureYears(e, now) ?? -1;
+      case 'weeklyHours': return e.weeklyHours ?? e.scopePercent;
+      case 'startDate': case 'lastRaiseDate': return e[k]?.getTime() ?? 0;
+      case 'wage': case 'hoursThisMonth': return e[k] ?? -1;
+      default: return e[k];
+    }
+  };
 
   const rows = useMemo(() => {
     const s = q.trim();
@@ -313,29 +337,39 @@ function EmployeeTable({ employees }: { employees: Employee[] }) {
         (!s || [e.fullName, e.department, e.role, e.site, e.manager, e.id].some((v) => v.includes(s))),
     );
     return list.sort((a, b) => {
-      const va = a[sort.key], vb = b[sort.key];
-      let c: number;
-      if (va instanceof Date || vb instanceof Date) c = ((va as Date | null)?.getTime() ?? 0) - ((vb as Date | null)?.getTime() ?? 0);
-      else if (typeof va === 'number') c = va - (vb as number);
-      else c = String(va).localeCompare(String(vb), 'he');
+      const va = sortVal(a, sort.key), vb = sortVal(b, sort.key);
+      const c = typeof va === 'number' ? va - (vb as number) : String(va).localeCompare(String(vb), 'he');
       return c * sort.dir;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employees, q, onlyActive, sort, now]);
+
+  const level = (e: Employee) => {
+    const med = medians.get(e.role);
+    if (e.wage == null || !med) return null;
+    const d = e.wage / med - 1;
+    if (d >= 0.07) return <span className="lvl up" title={`מעל חציון התפקיד (${fmtWage(med)})`}>▲ מעל</span>;
+    if (d <= -0.07) return <span className="lvl down" title={`מתחת לחציון התפקיד (${fmtWage(med)})`}>▼ מתחת</span>;
+    return <span className="lvl mid" title={`חציון התפקיד: ${fmtWage(med)}`}>בחציון</span>;
+  };
 
   return (
     <div className="card">
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-        <h2 style={{ flex: 1 }}>רשימת עובדים ({fmtInt(rows.length)})</h2>
-        <label style={{ fontSize: '0.85rem' }}>
-          <input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} /> פעילים בלבד
-        </label>
-        <input className="search" placeholder="חיפוש…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="card-head">
+        <h2>רשימת עובדים ({fmtInt(rows.length)})</h2>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ fontSize: '0.85rem' }}>
+            <input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} /> פעילים בלבד
+          </label>
+          <input className="search" placeholder="חיפוש שם / רשות / מסגרת…" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
       </div>
-      <div className="tbl-wrap" style={{ maxHeight: 480, overflowY: 'auto' }}>
+      {mapping.wage && <div className="sub">רמת שכר: ביחס לחציון השכר של אותו תפקיד (±7%). העבירו את העכבר לפרטים.</div>}
+      <div className="tbl-wrap" style={{ maxHeight: 520, overflowY: 'auto' }}>
         <table className="data">
           <thead>
             <tr>
-              {COLS.map((c) => (
+              {cols.map((c) => (
                 <th key={c.key} onClick={() => setSort({ key: c.key, dir: sort.key === c.key ? (-sort.dir as 1 | -1) : 1 })}>
                   {c.label} {sort.key === c.key ? (sort.dir === 1 ? '▲' : '▼') : ''}
                 </th>
@@ -353,6 +387,10 @@ function EmployeeTable({ employees }: { employees: Employee[] }) {
                 <td>{e.employmentType}</td>
                 <td>{e.weeklyHours != null ? `${fmtInt(e.weeklyHours)} ש"ש` : `${Math.round(e.scopePercent)}%`}</td>
                 <td>{fmtDate(e.startDate)}</td>
+                <td>{fmtTenure(tenureYears(e, now))}</td>
+                {mapping.wage && <td>{fmtWage(e.wage)} {level(e)}</td>}
+                {mapping.lastRaiseDate && <td>{e.lastRaiseDate ? <>{fmtDate(e.lastRaiseDate)} <span className="cell-sub">({fmtRaise(e.lastRaise)})</span></> : <span className="cell-sub">אין</span>}</td>}
+                {mapping.hoursThisMonth && <td>{e.hoursThisMonth == null ? '—' : fmt1(e.hoursThisMonth)}</td>}
                 {!onlyActive && <td>{fmtDate(e.endDate)}</td>}
               </tr>
             ))}

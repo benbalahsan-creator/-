@@ -236,38 +236,220 @@ export interface FrameworkRow {
   authority: string;
   program: string;
   manager: string;
+  /** אנשי צוות פעילים היום */
   staff: number;
   fte: number;
+  /** תקן: מעמודת "תקן" בקובץ, או ברירת מחדל לפי סוג פעילות */
+  required: number;
+  /** האם התקן הגיע מהקובץ (true) או מברירת המחדל (false) */
+  requiredFromFile: boolean;
+  /** staff - required: שלילי = חוסר */
+  gap: number;
+  status: 'short' | 'full' | 'over';
   leavers12m: number;
 }
 
-/** מצבת לפי מסגרת (גן / בית ספר). מסגרות עם איש צוות אחד מסומנות כסיכון */
-export function frameworks(emps: Employee[], ref = new Date()): FrameworkRow[] {
+export type StaffingDefaults = { match: string; required: number }[];
+
+export function defaultRequired(program: string, defaults: StaffingDefaults): number {
+  const hit = defaults.find((d) => new RegExp(d.match).test(program));
+  return hit ? hit.required : 1;
+}
+
+/**
+ * מצבת לפי מסגרת (גן / בית ספר) מול התקן.
+ * כוללת גם מסגרות שאין בהן אף עובד/ת היום אבל היו פעילות ב-60 הימים האחרונים (חוסר מלא).
+ */
+export function frameworks(emps: Employee[], defaults: StaffingDefaults = ORG.defaultStaffing, ref = new Date()): FrameworkRow[] {
   const yearAgo = monthsAgo(ref, 12);
+  const recent = new Date(ref.getTime() - 60 * DAY);
   const m = new Map<string, Employee[]>();
   for (const e of emps) {
     if (e.site === NA || ORG.nonFrameworkPattern.test(e.program) || ORG.nonFrameworkPattern.test(e.site)) continue;
-    const k = `${e.department}|${e.site}`;
-    m.set(k, [...(m.get(k) ?? []), e]);
+    // מפתח כולל סוג פעילות: חוג שפועל בתוך בית ספר הוא "מסגרת" נפרדת מהצהרון באותו מקום
+    const k = `${e.department}|${e.site}|${e.program}`;
+    const list = m.get(k);
+    if (list) list.push(e);
+    else m.set(k, [e]);
   }
   const out: FrameworkRow[] = [];
   for (const [, list] of m) {
     const active = list.filter((e) => isActiveAt(e, ref));
-    if (!active.length) continue;
+    if (!active.length && !list.some((e) => isActiveAt(e, recent))) continue;
+    const pool = active.length ? active : list;
     const top = (key: keyof Employee) => {
       const c = new Map<string, number>();
-      active.forEach((e) => c.set(String(e[key]), (c.get(String(e[key])) ?? 0) + 1));
+      pool.forEach((e) => c.set(String(e[key]), (c.get(String(e[key])) ?? 0) + 1));
       return [...c.entries()].sort((a, b) => b[1] - a[1])[0][0];
     };
+    const program = top('program');
+    const fileReq = Math.max(0, ...list.map((e) => e.requiredStaff ?? 0));
+    const required = fileReq > 0 ? fileReq : defaultRequired(program, defaults);
+    const gap = active.length - required;
     out.push({
       name: list[0].site,
       authority: list[0].department,
-      program: top('program'),
+      program: list[0].program !== NA ? list[0].program : program,
       manager: top('manager'),
       staff: active.length,
       fte: active.reduce((s, e) => s + e.scopePercent / 100, 0),
+      required,
+      requiredFromFile: fileReq > 0,
+      gap,
+      status: gap < 0 ? 'short' : gap > 0 ? 'over' : 'full',
       leavers12m: list.filter((e) => within(e.endDate, yearAgo, ref)).length,
     });
   }
-  return out.sort((a, b) => a.staff - b.staff || b.leavers12m - a.leavers12m);
+  // חוסרים קודם (הגדולים ביותר), אחר כך עודף, ואז מלאות
+  const rank = { short: 0, over: 1, full: 2 } as const;
+  return out.sort((a, b) => rank[a.status] - rank[b.status] || a.gap - b.gap || a.authority.localeCompare(b.authority, 'he'));
+}
+
+/* ---------- ותק ---------- */
+
+/** ותק בשנים: עד היום, או עד תאריך העזיבה */
+export function tenureYears(e: Employee, ref = new Date()): number | null {
+  if (!e.startDate) return null;
+  const end = e.endDate && e.endDate < ref ? e.endDate : ref;
+  return Math.max(0, (end.getTime() - e.startDate.getTime()) / YEAR);
+}
+
+export const fmtTenure = (y: number | null) => {
+  if (y == null) return '—';
+  if (y < 0.25) return `${Math.max(0, Math.round(y * 365.25))} ימים`;
+  if (y < 1) return `${Math.round(y * 12)} ח׳`;
+  return `${fmt1(y)} שנ׳`;
+};
+
+const TENURE_BANDS: [number, string][] = [
+  [0.25, 'עד 3 חודשים'],
+  [1, '3–12 חודשים'],
+  [2, '1–2 שנים'],
+  [3, '2–3 שנים'],
+  [5, '3–5 שנים'],
+  [Infinity, '5 שנים ומעלה'],
+];
+const bandOf = (y: number) => TENURE_BANDS.findIndex(([max]) => y < max);
+
+export const isHourlyWage = (w: number | null): w is number => w != null && w > 0 && w < ORG.hourlyWageMax;
+
+export interface TenureRow {
+  name: string;
+  active: number;
+  share: number;
+  /** שכר שעתי ממוצע (רק עובדים שעתיים) */
+  avgHourly: number | null;
+  /** עזבו ב-12 החודשים האחרונים, לפי הוותק ביום העזיבה */
+  leavers12m: number;
+}
+
+export function tenureTable(emps: Employee[], ref = new Date()): TenureRow[] {
+  const yearAgo = monthsAgo(ref, 12);
+  const rows = TENURE_BANDS.map(([, name]) => ({ name, active: 0, share: 0, wages: [] as number[], leavers12m: 0 }));
+  let total = 0;
+  for (const e of emps) {
+    const y = tenureYears(e, ref);
+    if (y == null) continue;
+    const r = rows[bandOf(y)];
+    if (isActiveAt(e, ref)) {
+      r.active++;
+      total++;
+      if (isHourlyWage(e.wage)) r.wages.push(e.wage);
+    } else if (within(e.endDate, yearAgo, ref)) r.leavers12m++;
+  }
+  return rows.map(({ wages, ...r }) => ({ ...r, share: total ? r.active / total : 0, avgHourly: avg(wages) }));
+}
+
+/* ---------- שכר ---------- */
+
+/** חציון שכר לכל תפקיד (בקרב פעילים) — לסימון "רמת שכר" ביחס לתפקיד */
+export function wageMedianByRole(emps: Employee[], ref = new Date()): Map<string, number> {
+  const by = new Map<string, number[]>();
+  for (const e of emps) {
+    if (e.wage == null || !isActiveAt(e, ref)) continue;
+    const list = by.get(e.role);
+    if (list) list.push(e.wage);
+    else by.set(e.role, [e.wage]);
+  }
+  const out = new Map<string, number>();
+  for (const [role, ws] of by) {
+    ws.sort((a, b) => a - b);
+    const mid = Math.floor(ws.length / 2);
+    out.set(role, ws.length % 2 ? ws[mid] : (ws[mid - 1] + ws[mid]) / 2);
+  }
+  return out;
+}
+
+export const fmtWage = (w: number | null) =>
+  w == null ? '—' : isHourlyWage(w) ? `₪${w.toLocaleString('he-IL', { maximumFractionDigits: 2 })}/ש׳` : `₪${Math.round(w).toLocaleString('he-IL')}/ח׳`;
+
+/** העלאה: ≤1 → שבר (0.05 = 5%), ≤30 → אחוזים, אחרת סכום בש"ח */
+export const fmtRaise = (v: number | null) => {
+  if (v == null) return '—';
+  if (v > 0 && v <= 1) return `${(v * 100).toLocaleString('he-IL', { maximumFractionDigits: 1 })}%`;
+  if (v <= 30) return `${v.toLocaleString('he-IL', { maximumFractionDigits: 1 })}%`;
+  return `₪${Math.round(v).toLocaleString('he-IL')}`;
+};
+
+/* ---------- שעות החודש ---------- */
+
+/** ימי עבודה (לפי ORG.workDays) בין שני תאריכים, כולל שניהם */
+export function workdaysBetween(from: Date, to: Date): number {
+  let n = 0;
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const end = new Date(to.getFullYear(), to.getMonth(), to.getDate());
+  while (d <= end) {
+    if (ORG.workDays.includes(d.getDay())) n++;
+    d.setDate(d.getDate() + 1);
+  }
+  return n;
+}
+
+export interface HoursRow {
+  key: string;
+  name: string;
+  sub: string;
+  employees: number;
+  /** שעות מתוכננות מתחילת החודש ועד היום (לפי שעות שבועיות ותקופת העסקה) */
+  planned: number;
+  /** שעות בפועל (null אם אין בקובץ) */
+  actual: number | null;
+}
+
+export type HoursGroup = 'department' | 'site' | 'employee';
+
+export function monthHours(emps: Employee[], group: HoursGroup, ref = new Date()) {
+  const mStart = new Date(ref.getFullYear(), ref.getMonth(), 1);
+  const today = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate());
+  const daysSoFar = workdaysBetween(mStart, today);
+  const perDay = ORG.workDays.length;
+  const m = new Map<string, HoursRow>();
+  let anyActual = false;
+  for (const e of emps) {
+    if (e.startDate && e.startDate > today) continue;
+    if (e.endDate && e.endDate < mStart) continue;
+    const from = e.startDate && e.startDate > mStart ? e.startDate : mStart;
+    const to = e.endDate && e.endDate < today ? new Date(e.endDate.getTime() - DAY) : today;
+    const days = to >= from ? workdaysBetween(from, to) : 0;
+    const weekly = e.weeklyHours ?? (e.scopePercent / 100) * ORG.fullTimeWeeklyHours;
+    const planned = (weekly / perDay) * days;
+    const [key, name, sub] =
+      group === 'employee' ? [e.id, e.fullName, `${e.site} · ${e.department}`]
+      : group === 'site' ? [`${e.department}|${e.site}`, e.site, e.department]
+      : [e.department, e.department, ''];
+    const r = m.get(key) ?? { key, name, sub, employees: 0, planned: 0, actual: null };
+    r.employees++;
+    r.planned += planned;
+    if (e.hoursThisMonth != null) {
+      anyActual = true;
+      r.actual = (r.actual ?? 0) + e.hoursThisMonth;
+    }
+    m.set(key, r);
+  }
+  const rows = [...m.values()].sort((a, b) => b.planned - a.planned);
+  const total = rows.reduce(
+    (t, r) => ({ planned: t.planned + r.planned, actual: r.actual == null ? t.actual : (t.actual ?? 0) + r.actual, employees: t.employees + r.employees }),
+    { planned: 0, actual: null as number | null, employees: 0 },
+  );
+  return { rows, total, anyActual, from: mStart, to: today, daysSoFar, daysInMonth: workdaysBetween(mStart, new Date(ref.getFullYear(), ref.getMonth() + 1, 0)) };
 }

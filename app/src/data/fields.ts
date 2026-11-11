@@ -18,12 +18,18 @@ export const FIELDS: FieldDef[] = [
   { key: 'manager', label: 'רכזת / מנהל/ת ישיר/ה', required: false, aliases: ['רכזת', 'רכז', 'רכזת אזור', 'מנהלת אזור', 'מנהל ישיר', 'מנהל', 'מנהלת', 'אחראי', 'manager'] },
   { key: 'employmentType', label: 'סוג העסקה', required: false, aliases: ['סוג העסקה', 'סוג עובד', 'מעמד', 'סטטוס העסקה', 'סוג שכר', 'employment type', 'type'] },
   { key: 'scopePercent', label: 'היקף משרה (%)', required: false, aliases: ['היקף משרה', 'אחוז משרה', '% משרה', 'scope', 'fte', 'percent'] },
-  { key: 'weeklyHours', label: 'שעות שבועיות', required: false, aliases: ['שעות שבועיות', 'שעות בשבוע', 'שעות', 'weekly hours', 'hours'] },
+  { key: 'weeklyHours', label: 'שעות שבועיות', required: false, aliases: ['שעות שבועיות', 'שעות בשבוע', 'ש"ש', 'היקף שעות', 'weekly hours'] },
   { key: 'startDate', label: 'תאריך תחילת עבודה', required: true, aliases: ['תאריך תחילת עבודה', 'תחילת עבודה', 'תאריך התחלה', 'תאריך קליטה', 'תאריך כניסה', 'start date', 'hire date', 'startdate'] },
   { key: 'endDate', label: 'תאריך סיום עבודה', required: false, aliases: ['תאריך סיום עבודה', 'סיום עבודה', 'תאריך סיום', 'תאריך עזיבה', 'end date', 'termination date', 'enddate'] },
   { key: 'gender', label: 'מגדר', required: false, aliases: ['מגדר', 'מין', 'gender', 'sex'] },
   { key: 'birthDate', label: 'תאריך לידה', required: false, aliases: ['תאריך לידה', 'ת. לידה', 'birth date', 'birthdate', 'dob'] },
-  { key: 'monthlyCost', label: 'עלות חודשית', required: false, aliases: ['עלות חודשית', 'עלות מעביד', 'עלות', 'שכר', 'שכר ברוטו', 'monthly cost', 'cost', 'salary'] },
+  { key: 'wage', label: 'שכר (שעתי / חודשי)', required: false, aliases: ['שכר שעתי', 'תעריף שעתי', 'תעריף', 'שכר לשעה', 'שכר בסיס', 'רמת שכר', 'שכר', 'wage', 'hourly rate', 'salary'] },
+  { key: 'lastRaiseDate', label: 'תאריך העלאה אחרונה', required: false, aliases: ['תאריך העלאה אחרונה', 'תאריך העלאה', 'העלאה אחרונה תאריך', 'last raise date'] },
+  { key: 'lastRaise', label: 'גובה העלאה אחרונה (% או ₪)', required: false, aliases: ['גובה העלאה אחרונה', 'העלאה אחרונה', 'אחוז העלאה', 'סכום העלאה', 'העלאה', 'last raise', 'raise'] },
+  { key: 'hoursThisMonth', label: 'שעות בפועל החודש', required: false, aliases: ['שעות בפועל החודש', 'שעות בפועל', 'שעות החודש', 'שעות נוכחות', 'נוכחות החודש', 'actual hours', 'hours this month'] },
+  { key: 'requiredStaff', label: 'תקן מסגרת (מס׳ אנשי צוות)', required: false, aliases: ['תקן מסגרת', 'תקן', 'תקן צוות', 'מספר אנשי צוות נדרש', 'required staff'] },
+  { key: 'leaveReason', label: 'סיבת עזיבה', required: false, aliases: ['סיבת עזיבה', 'סיבת סיום', 'סיבה', 'leave reason', 'termination reason'] },
+  { key: 'monthlyCost', label: 'עלות חודשית', required: false, aliases: ['עלות חודשית', 'עלות מעביד', 'עלות', 'עלות שכר', 'monthly cost', 'cost'] },
 ];
 
 const norm = (s: string) =>

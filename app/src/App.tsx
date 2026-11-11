@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ColumnMapper } from './components/ColumnMapper';
 import { Dashboard } from './components/Dashboard';
 import { DataLoader } from './components/DataLoader';
+import { Logo } from './components/Logo';
 import { guessMapping } from './data/fields';
 import { ORG } from './config/org';
 import { normalize } from './data/normalize';
@@ -47,6 +48,24 @@ export default function App() {
 
   return (
     <div className="app" dir="rtl">
+      <header className="appbar">
+        <Logo />
+        <div className="titles">
+          <h1>דשבורד כוח אדם</h1>
+          <div className="meta">
+            {step === 'dash' && dataset
+              ? <>מקור: {dataset.sourceName} · עודכן {dataset.loadedAt.toLocaleString('he-IL')}</>
+              : ORG.fullName}
+          </div>
+        </div>
+        {step === 'dash' && (
+          <div className="actions">
+            <button className="btn" onClick={() => setStep('map')}>התאמת עמודות</button>
+            <button className="btn" onClick={() => setStep('load')}>טעינת קובץ חדש</button>
+          </div>
+        )}
+      </header>
+
       {step === 'load' && <DataLoader onLoaded={onLoaded} />}
 
       {step === 'map' && dataset && (
@@ -55,18 +74,6 @@ export default function App() {
 
       {step === 'dash' && dataset && result && (
         <>
-          <div className="topbar">
-            <div>
-              <h1>כוח אדם · {ORG.name}</h1>
-              <div className="meta">
-                מקור: {dataset.sourceName} · עודכן {dataset.loadedAt.toLocaleString('he-IL')}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn" onClick={() => setStep('map')}>התאמת עמודות</button>
-              <button className="btn" onClick={() => setStep('load')}>טעינת קובץ חדש</button>
-            </div>
-          </div>
           {result.warnings.map((w) => (
             <div key={w} className="notice">{w}</div>
           ))}
