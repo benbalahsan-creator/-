@@ -1,11 +1,13 @@
 import { useRef, useState } from 'react';
 import { ORG } from '../config/org';
+// הלוגו מוטמע בקוד (data URL) כדי שיעבוד גם בגרסה המפורסמת כקובץ יחיד
+import orgLogo from '../assets/logo.png?inline';
 
 const KEY = 'hr-dashboard:logo';
 
 /**
  * לוגו העמותה בפינה הימנית העליונה.
- * סדר עדיפויות: לוגו שהועלה בממשק (נשמר בדפדפן) → public/logo.png → שם העמותה כטקסט.
+ * סדר עדיפויות: לוגו שהועלה בממשק (נשמר בדפדפן) → לוגו העמותה המוטמע (src/assets/logo.png) → שם העמותה כטקסט.
  * לחיצה על הלוגו מאפשרת להעלות/להחליף תמונה.
  */
 export function Logo() {
@@ -18,7 +20,7 @@ export function Logo() {
   });
   const [fileOk, setFileOk] = useState(true);
   const input = useRef<HTMLInputElement>(null);
-  const src = custom ?? (fileOk ? `${import.meta.env.BASE_URL}logo.png` : null);
+  const src = custom ?? (fileOk ? orgLogo : null);
 
   function onFile(f: File) {
     const reader = new FileReader();

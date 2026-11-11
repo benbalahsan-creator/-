@@ -313,8 +313,8 @@ function RecentHires({ hires }: { hires: Employee[] }) {
 type SortKey = 'phone' | 'residenceCity' | 'fullName' | 'department' | 'role' | 'site' | 'employmentType' | 'weeklyHours' | 'startDate' | 'tenure' | 'wage' | 'lastRaiseDate' | 'hoursThisMonth';
 const COLS: { key: SortKey; label: string; field?: keyof Employee }[] = [
   { key: 'fullName', label: 'שם' },
-  { key: 'phone', label: 'טלפון', field: 'phone' },
-  { key: 'residenceCity', label: 'עיר מגורים', field: 'residenceCity' },
+  { key: 'phone', label: 'טלפון' },
+  { key: 'residenceCity', label: 'עיר מגורים' },
   { key: 'department', label: 'רשות' },
   { key: 'site', label: 'מסגרת' },
   { key: 'role', label: 'תפקיד' },
@@ -397,8 +397,8 @@ function EmployeeTable({ employees, mapping }: { employees: Employee[]; mapping:
             {rows.slice(0, 500).map((e) => (
               <tr key={e.id}>
                 <td>{e.fullName}</td>
-                {mapping.phone && <td><Phone v={e.phone} /></td>}
-                {mapping.residenceCity && <td>{e.residenceCity || '—'}</td>}
+                <td><Phone v={e.phone} /></td>
+                <td>{e.residenceCity || '—'}</td>
                 <td>{e.department}</td>
                 <td>{e.site}</td>
                 <td>{e.role}</td>

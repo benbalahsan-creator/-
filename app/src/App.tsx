@@ -33,7 +33,10 @@ export default function App() {
 
   function onLoaded(ds: RawDataset) {
     setDataset(ds);
-    setMapping(loadSavedMapping(ds.columns) ?? guessMapping(ds.columns));
+    // מיפוי שמור גובר, אבל שדות חדשים שלא היו בו (למשל טלפון, עיר מגורים) מתווספים מהזיהוי האוטומטי
+    const guessed = guessMapping(ds.columns);
+    const saved = loadSavedMapping(ds.columns);
+    setMapping(saved ? { ...guessed, ...saved } : guessed);
     setStep('map');
   }
 
